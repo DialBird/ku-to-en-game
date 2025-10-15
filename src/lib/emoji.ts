@@ -1,6 +1,7 @@
 import { EMOJIS, FACE_EMOJIS, type EmojiDefinition } from "@/data"
 
 const EMOJI_KITCHEN_API_BASE = "https://emoji-kitchen.vercel.app/api"
+const EMOJIK_IMAGE_BASE = "https://emojik.vercel.app/s"
 
 const LEGACY_KITCHEN_BASES = [
   "https://www.gstatic.com/android/keyboard/emojikitchen/20201001",
@@ -96,10 +97,54 @@ function extractKitchenPayload(payload: unknown): KitchenApiResult | null {
   return null
 }
 
+function buildEmojikUrl(
+  first: EmojiDefinition,
+  second: EmojiDefinition,
+  size: number,
+): string {
+  const encodedFirst = encodeURIComponent(first.emoji)
+  const encodedSecond = encodeURIComponent(second.emoji)
+  return `${EMOJIK_IMAGE_BASE}/${encodedFirst}_${encodedSecond}?size=${size}`
+}
+
+async function tryEmojikFusion(
+  primary: EmojiDefinition,
+  secondary: EmojiDefinition,
+): Promise<KitchenApiResult | null> {
+  const pairs: [EmojiDefinition, EmojiDefinition][] = [
+    [primary, secondary],
+    [secondary, primary],
+  ]
+  const sizes = [512, 256, 128]
+
+  for (const [first, second] of pairs) {
+    for (const size of sizes) {
+      const url = buildEmojikUrl(first, second, size)
+      try {
+        await ensureImageLoaded(url)
+        return {
+          id: `${primary.id}_${secondary.id}`,
+          url,
+          text: `${primary.emoji}×${secondary.emoji}`,
+        }
+      } catch (error) {
+        console.debug("Emojik fusion failed", url, error)
+      }
+    }
+  }
+
+  return null
+}
+
 async function fetchKitchenFusion(
   primary: EmojiDefinition,
   secondary: EmojiDefinition,
 ): Promise<KitchenApiResult | null> {
+  const emojikResult = await tryEmojikFusion(primary, secondary)
+  if (emojikResult) {
+    return emojikResult
+  }
+
   const searchParamVariants: URLSearchParams[] = [
     new URLSearchParams({ primary: primary.id, secondary: secondary.id }),
     new URLSearchParams({ primary: primary.emoji, secondary: secondary.emoji }),
